@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=redmineapp
+Comment=Redmine desktop client
+Exec=redmineapp
+Icon=redmineapp
+Terminal=false
+Type=Application
+Categories=Office;ProjectManagement;
