@@ -5,9 +5,9 @@ package ui
 
 import (
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/widget"
+	"math"
 )
 
 // floatingPanel renders an elevated, theme-aware surface.
@@ -15,20 +15,32 @@ type floatingPanel struct {
 	widget.BaseWidget
 	content                        fyne.CanvasObject
 	selected, hovered, interactive bool
+	pointer                        float32
 }
 
 func newPanel(content fyne.CanvasObject) *floatingPanel {
-	p := &floatingPanel{content: content}
+	p := &floatingPanel{content: content, pointer: .35}
 	p.ExtendBaseWidget(p)
 	return p
 }
-func (p *floatingPanel) MouseIn(*desktop.MouseEvent) {
+func (p *floatingPanel) MouseIn(e *desktop.MouseEvent) {
 	if p.interactive {
 		p.hovered = true
+		if p.Size().Width > 0 {
+			p.pointer = e.Position.X / p.Size().Width
+		}
 		p.Refresh()
 	}
 }
-func (p *floatingPanel) MouseMoved(*desktop.MouseEvent) {}
+func (p *floatingPanel) MouseMoved(e *desktop.MouseEvent) {
+	if p.interactive && p.Size().Width > 0 {
+		v := e.Position.X / p.Size().Width
+		if math.Abs(float64(v-p.pointer)) > .035 {
+			p.pointer = v
+			p.Refresh()
+		}
+	}
+}
 func (p *floatingPanel) MouseOut() {
 	if p.interactive {
 		p.hovered = false
@@ -36,48 +48,35 @@ func (p *floatingPanel) MouseOut() {
 	}
 }
 func (p *floatingPanel) CreateRenderer() fyne.WidgetRenderer {
-	bg := canvas.NewRectangle(currentColors().surface)
-	bg.CornerRadius = 16
-	r := &panelRenderer{p: p, bg: bg}
+	r := &panelRenderer{p: p, surface: newGlassSurface()}
 	r.Refresh()
 	return r
 }
 
 type panelRenderer struct {
-	p  *floatingPanel
-	bg *canvas.Rectangle
+	p       *floatingPanel
+	surface *glassSurface
 }
 
-func (r *panelRenderer) MinSize() fyne.Size { return r.p.content.MinSize().Add(fyne.NewSize(36, 32)) }
+func (r *panelRenderer) MinSize() fyne.Size { return r.p.content.MinSize().Add(fyne.NewSize(40, 36)) }
 func (r *panelRenderer) Layout(s fyne.Size) {
 	lift := float32(0)
 	if r.p.hovered {
 		lift = 2
 	}
-	r.bg.Move(fyne.NewPos(6, 6-lift))
-	r.bg.Resize(fyne.NewSize(max(0, s.Width-12), max(0, s.Height-12)))
-	r.p.content.Move(fyne.NewPos(18, 16-lift))
-	r.p.content.Resize(fyne.NewSize(max(0, s.Width-36), max(0, s.Height-32)))
+	r.surface.Move(fyne.NewPos(6, 6-lift))
+	r.surface.Resize(fyne.NewSize(max(0, s.Width-12), max(0, s.Height-12)))
+	r.p.content.Move(fyne.NewPos(20, 18-lift))
+	r.p.content.Resize(fyne.NewSize(max(0, s.Width-40), max(0, s.Height-36)))
 }
 func (r *panelRenderer) Refresh() {
-	p := currentColors()
-	r.bg.FillColor = p.surface
-	r.bg.StrokeWidth = 1
-	r.bg.StrokeColor = p.border
-	r.bg.Shadow = canvas.Shadow{Color: p.shadow, BlurRadius: 12, Offset: fyne.NewPos(0, 4)}
-	if r.p.selected {
-		r.bg.FillColor = p.selected
-		r.bg.StrokeColor = p.ring
-		r.bg.StrokeWidth = 1.5
-	}
-	if r.p.hovered {
-		r.bg.Shadow.BlurRadius = 18
-		r.bg.Shadow.Offset = fyne.NewPos(0, 7)
-		r.bg.Shadow.Color = p.shadow
-	}
+	r.surface.selected = r.p.selected
+	r.surface.hovered = r.p.hovered
+	r.surface.pointer = r.p.pointer
 	r.Layout(r.p.Size())
-	r.bg.Refresh()
-	canvas.Refresh(r.p)
+	r.surface.Refresh()
 }
-func (r *panelRenderer) Objects() []fyne.CanvasObject { return []fyne.CanvasObject{r.bg, r.p.content} }
-func (r *panelRenderer) Destroy()                     {}
+func (r *panelRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.surface, r.p.content}
+}
+func (r *panelRenderer) Destroy() {}

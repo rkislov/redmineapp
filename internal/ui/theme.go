@@ -25,9 +25,9 @@ type palette struct{ background, surface, raised, border, foreground, muted, acc
 
 func colors(dark bool) palette {
 	if dark {
-		return palette{background: color.NRGBA{24, 26, 29, 255}, surface: color.NRGBA{33, 36, 40, 255}, raised: color.NRGBA{43, 47, 52, 255}, border: color.NRGBA{58, 63, 69, 255}, foreground: color.NRGBA{226, 229, 232, 255}, muted: color.NRGBA{157, 165, 174, 255}, accent: color.NRGBA{126, 155, 170, 255}, selected: color.NRGBA{40, 49, 56, 255}, ring: color.NRGBA{126, 155, 170, 255}, track: color.NRGBA{56, 62, 69, 255}, shadow: color.NRGBA{0, 0, 0, 65}}
+		return palette{background: color.NRGBA{19, 25, 34, 255}, surface: color.NRGBA{38, 48, 62, 255}, raised: color.NRGBA{56, 69, 85, 170}, border: color.NRGBA{184, 206, 228, 44}, foreground: color.NRGBA{232, 238, 246, 255}, muted: color.NRGBA{165, 181, 197, 255}, accent: color.NRGBA{144, 172, 194, 255}, selected: color.NRGBA{55, 77, 98, 255}, ring: color.NRGBA{144, 172, 194, 255}, track: color.NRGBA{124, 151, 177, 60}, shadow: color.NRGBA{0, 0, 0, 65}}
 	}
-	return palette{background: color.NRGBA{242, 243, 244, 255}, surface: color.NRGBA{253, 253, 252, 255}, raised: color.NRGBA{233, 236, 238, 255}, border: color.NRGBA{221, 225, 228, 255}, foreground: color.NRGBA{48, 54, 60, 255}, muted: color.NRGBA{105, 114, 122, 255}, accent: color.NRGBA{80, 107, 122, 255}, selected: color.NRGBA{237, 242, 244, 255}, ring: color.NRGBA{125, 150, 164, 255}, track: color.NRGBA{223, 228, 231, 255}, shadow: color.NRGBA{33, 42, 48, 17}}
+	return palette{background: color.NRGBA{231, 237, 243, 255}, surface: color.NRGBA{251, 253, 255, 255}, raised: color.NRGBA{241, 247, 253, 155}, border: color.NRGBA{255, 255, 255, 210}, foreground: color.NRGBA{36, 51, 67, 255}, muted: color.NRGBA{98, 119, 140, 255}, accent: color.NRGBA{76, 108, 134, 255}, selected: color.NRGBA{216, 233, 247, 255}, ring: color.NRGBA{127, 161, 189, 255}, track: color.NRGBA{144, 166, 187, 60}, shadow: color.NRGBA{33, 42, 48, 17}}
 }
 func currentColors() palette {
 	if a := fyne.CurrentApp(); a != nil {
@@ -65,8 +65,10 @@ func (t appTheme) Color(n fyne.ThemeColorName, variant fyne.ThemeVariant) color.
 		return p.border
 	case theme.ColorNameDisabled, theme.ColorNamePlaceHolder:
 		return p.muted
-	case theme.ColorNameOverlayBackground, theme.ColorNameMenuBackground, theme.ColorNameInputBackground:
-		return p.surface
+	case theme.ColorNameInputBackground:
+		return alpha(p.surface, 165)
+	case theme.ColorNameOverlayBackground, theme.ColorNameMenuBackground:
+		return alpha(p.surface, 248)
 	case theme.ColorNameDisabledButton:
 		return p.raised
 	case theme.ColorNameScrollBar:
@@ -85,11 +87,11 @@ func (appTheme) Icon(n fyne.ThemeIconName) fyne.Resource { return theme.DefaultT
 func (appTheme) Size(n fyne.ThemeSizeName) float32 {
 	switch n {
 	case theme.SizeNameInputRadius, theme.SizeNameButtonRadius, theme.SizeNameSelectionRadius:
-		return 10
+		return 18
 	case theme.SizeNameCardRadius, theme.SizeNameDialogRadius:
-		return 16
+		return 24
 	case theme.SizeNameSplitThickness:
-		return 3
+		return 2
 	case theme.SizeNameText:
 		return 14
 	case theme.SizeNamePadding:

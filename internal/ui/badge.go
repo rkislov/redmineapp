@@ -22,7 +22,7 @@ func newBadge() *badge {
 	b := &badge{text: canvas.NewText("В работе", currentColors().foreground), bg: canvas.NewRectangle(color.Transparent)}
 	b.text.TextSize = 12
 	b.text.TextStyle.Bold = true
-	b.bg.CornerRadius = 8
+	b.bg.CornerRadius = 12
 	b.ExtendBaseWidget(b)
 	return b
 }

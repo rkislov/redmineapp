@@ -91,7 +91,7 @@ func (u *UI) restoreSession() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	u.authCancel = cancel
 	u.authLoading = newLoadingPanel("Подключаемся к " + profile.Name + "…")
-	u.win.SetContent(container.NewBorder(nil, container.NewCenter(widget.NewButton("Выбрать подключение", func() { u.login() })), nil, nil, u.authLoading.view))
+	u.setContent(container.NewBorder(nil, container.NewCenter(widget.NewButton("Выбрать подключение", func() { u.login() })), nil, nil, u.authLoading.view))
 	u.authLoading.Start("Подключаемся к " + profile.Name + "…")
 	go func() {
 		defer cancel()

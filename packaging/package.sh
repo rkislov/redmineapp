@@ -34,7 +34,7 @@ case "$(go env GOOS)" in
    mkdir -p "$stage/DEBIAN"
    cat > "$stage/DEBIAN/control" <<CONTROL
 Package: redmineapp
-Version: 0.1.1
+Version: 0.1.2
 Architecture: $(go env GOARCH)
 Maintainer: redmineapp contributors
 Depends: libgl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libegl1

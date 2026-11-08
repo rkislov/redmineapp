@@ -231,7 +231,7 @@ func (u *UI) login(messages ...string) {
 	connect.Importance = widget.HighImportance
 	form := container.NewVBox(widget.NewLabelWithStyle("redmineapp", fyne.TextAlignCenter, fyne.TextStyle{Bold: true}), label("Задачи, проекты и команда — в одном окне"), profiles, widget.NewForm(widget.NewFormItem("Название", name), widget.NewFormItem("Сервер", server), widget.NewFormItem("Способ входа", auth)), keyForm, basicForm, remember, message, connect, widget.NewSeparator(), u.appearanceControl())
 	box := container.NewGridWrap(fyne.NewSize(590, 650), container.NewVScroll(newPanel(form)))
-	u.win.SetContent(container.NewCenter(box))
+	u.setContent(container.NewCenter(box))
 }
 
 func (u *UI) appearanceControl() fyne.CanvasObject {
@@ -278,7 +278,7 @@ func (u *UI) shell() {
 			button.Importance = widget.HighImportance
 		}
 		navButtons[n.name] = button
-		nav.Add(button)
+		nav.Add(container.NewThemeOverride(button, glassControlTheme{}))
 	}
 	navBottom := container.NewVBox(u.appearanceControl(), widget.NewButtonWithIcon("Новая задача", theme.ContentAddIcon(), u.createIssue), widget.NewButtonWithIcon("Подключения", theme.SettingsIcon(), func() { u.login() }))
 	sidebar := newPanel(container.NewBorder(nav, navBottom, nil, nil, layout.NewSpacer()))
@@ -305,7 +305,7 @@ func (u *UI) shell() {
 			b.Importance = widget.HighImportance
 		}
 		filterButtons[f.value] = b
-		filter.Add(b)
+		filter.Add(container.NewThemeOverride(b, glassControlTheme{}))
 	}
 	search := widget.NewEntry()
 	search.SetPlaceHolder("Тема задачи или #номер")
@@ -350,7 +350,7 @@ func (u *UI) shell() {
 	right.Offset = .41
 	root := container.NewHSplit(sidebar, right)
 	root.Offset = .18
-	u.win.SetContent(container.NewPadded(root))
+	u.setContent(container.NewPadded(root))
 }
 func (u *UI) loadMetadata() {
 	if u.metadataCancel != nil {
