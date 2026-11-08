@@ -32,22 +32,23 @@ type Journal struct {
 	Created string `json:"created_on"`
 }
 type Issue struct {
-	AllowedStatuses []Ref     `json:"allowed_statuses"`
-	ID              int       `json:"id"`
-	Subject         string    `json:"subject"`
-	Description     string    `json:"description"`
-	Project         Ref       `json:"project"`
-	Tracker         Ref       `json:"tracker"`
-	Status          Ref       `json:"status"`
-	Priority        Ref       `json:"priority"`
-	AssignedTo      Ref       `json:"assigned_to"`
-	Author          Ref       `json:"author"`
-	Done            int       `json:"done_ratio"`
-	Start           string    `json:"start_date"`
-	Due             string    `json:"due_date"`
-	Updated         string    `json:"updated_on"`
-	Spent           float64   `json:"spent_hours"`
-	Journals        []Journal `json:"journals"`
+	Attachments     []Attachment `json:"attachments"`
+	AllowedStatuses []Ref        `json:"allowed_statuses"`
+	ID              int          `json:"id"`
+	Subject         string       `json:"subject"`
+	Description     string       `json:"description"`
+	Project         Ref          `json:"project"`
+	Tracker         Ref          `json:"tracker"`
+	Status          Ref          `json:"status"`
+	Priority        Ref          `json:"priority"`
+	AssignedTo      Ref          `json:"assigned_to"`
+	Author          Ref          `json:"author"`
+	Done            int          `json:"done_ratio"`
+	Start           string       `json:"start_date"`
+	Due             string       `json:"due_date"`
+	Updated         string       `json:"updated_on"`
+	Spent           float64      `json:"spent_hours"`
+	Journals        []Journal    `json:"journals"`
 }
 type Page struct {
 	Issues []Issue `json:"issues"`
@@ -159,7 +160,7 @@ func (c *Client) Issue(ctx context.Context, id int) (Issue, error) {
 	var v struct {
 		Issue Issue `json:"issue"`
 	}
-	e := c.Do(ctx, "GET", fmt.Sprintf("issues/%d.json", id), url.Values{"include": {"journals,allowed_statuses"}}, nil, &v)
+	e := c.Do(ctx, "GET", fmt.Sprintf("issues/%d.json", id), url.Values{"include": {"journals,allowed_statuses,attachments"}}, nil, &v)
 	return v.Issue, e
 }
 func (c *Client) Update(ctx context.Context, id int, fields map[string]any) error {

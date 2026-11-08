@@ -24,6 +24,8 @@ import (
 const service = "org.redmine-go.desktop"
 
 type UI struct {
+	transferCancels                                                map[int]context.CancelFunc
+	transferID                                                     int
 	post                                                           func(func())
 	secretReader                                                   func(string, string) (string, error)
 	listLoading, detailLoading, authLoading                        *loadingPanel
@@ -572,7 +574,7 @@ func (u *UI) showIssue(v redmine.Issue) {
 	progress.OnChanged = func(value int) { u.setIssueProgress(v.ID, progress, value) }
 	progress.SetValue(float64(v.Done) / 100)
 	attrs := widget.NewForm(widget.NewFormItem("Статус", label(v.Status.Name)), widget.NewFormItem("Приоритет", label(v.Priority.Name)), widget.NewFormItem("Исполнитель", container.NewBorder(nil, nil, nil, widget.NewButton("Взять", func() { u.update(v.ID, map[string]any{"assigned_to_id": u.me.ID}) }), label(v.AssignedTo.Name))), widget.NewFormItem("Готовность", progress), widget.NewFormItem("Начало", label(v.Start)), widget.NewFormItem("Срок", label(v.Due)), widget.NewFormItem("Затрачено", label(fmt.Sprintf("%.2f ч", v.Spent))), widget.NewFormItem("Обновлено", label(formatDate(v.Updated))))
-	body := container.NewVBox(head, newPanel(attrs), widget.NewLabelWithStyle("Описание", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), newPanel(label(v.Description)), widget.NewLabelWithStyle("Комментарии", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	body := container.NewVBox(head, newPanel(attrs), widget.NewLabelWithStyle("Описание", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), newPanel(label(v.Description)), u.attachmentSection(v), widget.NewLabelWithStyle("Комментарии", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	for i, j := range v.Journals {
 		if strings.TrimSpace(j.Notes) == "" {
 			continue
@@ -619,13 +621,18 @@ func (u *UI) update(id int, fields map[string]any) {
 func (u *UI) comment(id int) {
 	entry := widget.NewMultiLineEntry()
 	entry.SetMinRowsVisible(6)
-	d := dialog.NewForm("Комментарий", "Отправить", "Отмена", []*widget.FormItem{widget.NewFormItem("Текст", entry)}, func(ok bool) {
-		if ok && strings.TrimSpace(entry.Text) != "" {
-			u.update(id, map[string]any{"notes": entry.Text})
+	files := u.newAttachmentPicker()
+	u.attachmentForm("Комментарий", "Отправить", []*widget.FormItem{widget.NewFormItem("Текст", entry)}, files, func() (map[string]any, error) {
+		if strings.TrimSpace(entry.Text) == "" && len(files.paths) == 0 {
+			return nil, fmt.Errorf("введите комментарий или прикрепите файл")
 		}
-	}, u.win)
-	d.Resize(fyne.NewSize(560, 340))
-	d.Show()
+		return map[string]any{"notes": entry.Text}, nil
+	}, func(ctx context.Context, c *redmine.Client, f map[string]any) error { return c.Update(ctx, id, f) }, func() {
+		if u.selected == id {
+			u.openIssue(id)
+		}
+		u.refresh()
+	})
 }
 func selectRef(refs []redmine.Ref, id int) (*widget.Select, func() int) {
 	opts := []string{}
@@ -701,25 +708,24 @@ func (u *UI) createIssue() {
 	subject := widget.NewEntry()
 	desc := widget.NewMultiLineEntry()
 	desc.SetMinRowsVisible(5)
-	d := dialog.NewForm("Новая задача", "Создать", "Отмена", []*widget.FormItem{widget.NewFormItem("Проект", p), widget.NewFormItem("Трекер", t), widget.NewFormItem("Тема", subject), widget.NewFormItem("Описание", desc)}, func(ok bool) {
-		if !ok {
-			return
-		}
+	files := u.newAttachmentPicker()
+	var created redmine.Issue
+	u.attachmentForm("Новая задача", "Создать", []*widget.FormItem{widget.NewFormItem("Проект", p), widget.NewFormItem("Трекер", t), widget.NewFormItem("Тема", subject), widget.NewFormItem("Описание", desc)}, files, func() (map[string]any, error) {
 		if projectID == 0 || strings.TrimSpace(subject.Text) == "" {
-			dialog.ShowError(fmt.Errorf("выберите проект и введите тему"), u.win)
-			return
+			return nil, fmt.Errorf("выберите проект и введите тему")
 		}
 		f := map[string]any{"project_id": projectID, "subject": subject.Text, "description": desc.Text}
 		if tid() > 0 {
 			f["tracker_id"] = tid()
 		}
-		c := u.client
-		var created redmine.Issue
-		u.mutation(func() error { var e error; created, e = c.Create(context.Background(), f); return e }, func() { u.refresh(); u.openIssue(created.ID) })
-	}, u.win)
-	d.Resize(fyne.NewSize(600, 450))
-	d.Show()
+		return f, nil
+	}, func(ctx context.Context, c *redmine.Client, f map[string]any) error {
+		var e error
+		created, e = c.Create(ctx, f)
+		return e
+	}, func() { u.refresh(); u.openIssue(created.ID) })
 }
+
 func (u *UI) logTime(id int) {
 	hours := widget.NewEntry()
 	hours.SetPlaceHolder("1.5")

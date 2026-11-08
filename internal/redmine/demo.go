@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,15 +17,16 @@ import (
 
 // DemoTransport keeps sample data in memory and never accesses the network.
 type demoTransport struct {
-	mu     sync.Mutex
-	issues []Issue
-	next   int
+	mu      sync.Mutex
+	issues  []Issue
+	next    int
+	uploads map[string][]byte
 }
 
 func NewDemo() *Client {
 	c, _ := New("https://demo.invalid", "demo")
 	names := []string{"Выпуск инфраструктуры", "План разработки 2027", "Пуско-наладочные работы по тестированию инфраструктуры", "Регистрация сделки и запрос цен", "Интеграция процессов в сервисах"}
-	d := &demoTransport{next: 246620}
+	d := &demoTransport{next: 246620, uploads: map[string][]byte{}}
 	for n, s := range names {
 		d.issues = append(d.issues, Issue{ID: 246612 + n, Subject: s, Description: "Требуется подготовить всё для тестирования инфраструктуры.\n\nПосле коммита в репозиторий должен запуститься процесс автоматизированного тестирования с отчётом в задачу.\n\nЭто демонстрационные данные. Изменения сохраняются только до закрытия приложения.", Project: Ref{ID: 1, Name: "Инфраструктура"}, Tracker: Ref{ID: 2, Name: "Задача"}, Status: Ref{ID: 2, Name: "В работе"}, Priority: Ref{ID: 2, Name: "Нормальный"}, Author: Ref{ID: 1, Name: "Антон Палгунов"}, AssignedTo: Ref{ID: 1, Name: "Иванов Сергей"}, Done: []int{62, 10, 0, 60, 20}[n], Start: "2026-07-28", Updated: "2026-10-23T18:57:00+03:00", Spent: 55.5, Journals: []Journal{{ID: 1, User: Ref{ID: 1, Name: "Антон Палгунов"}, Notes: "Окружение подготовлено. Можно начинать проверку.", Created: "2026-10-24T10:00:00+03:00"}}})
 	}
@@ -38,6 +40,31 @@ func (d *demoTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	code := 200
 	path := r.URL.Path
 	switch {
+	case path == "/uploads.json" && r.Method == "POST":
+		data, e := io.ReadAll(io.LimitReader(r.Body, 20<<20+1))
+		if e != nil {
+			return nil, e
+		}
+		if len(data) > 20<<20 {
+			code = 413
+			break
+		}
+		token := fmt.Sprintf("demo-%d", len(d.uploads)+1)
+		d.uploads[token] = data
+		code = 201
+		value = map[string]any{"upload": Upload{Token: token}}
+	case strings.HasPrefix(path, "/attachments/download/"):
+		parts := strings.Split(path, "/")
+		if len(parts) < 5 {
+			code = 404
+			break
+		}
+		data, ok := d.uploads[parts[3]]
+		if !ok {
+			code = 404
+			break
+		}
+		return &http.Response{StatusCode: 200, ContentLength: int64(len(data)), Header: http.Header{"Content-Type": {"application/octet-stream"}}, Body: io.NopCloser(strings.NewReader(string(data))), Request: r}, nil
 	case path == "/users/current.json":
 		value = map[string]any{"user": User{ID: 1, Firstname: "Сергей", Lastname: "Иванов"}}
 	case path == "/projects.json":
@@ -80,7 +107,10 @@ func (d *demoTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		value = Page{Issues: issues, Total: total}
 	case path == "/issues.json" && r.Method == "POST":
 		var b struct {
-			Issue Issue `json:"issue"`
+			Issue struct {
+				Issue
+				Uploads []Upload `json:"uploads"`
+			} `json:"issue"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&b)
 		b.Issue.ID = d.next
@@ -88,7 +118,8 @@ func (d *demoTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		b.Issue.Project = Ref{ID: 1, Name: "Инфраструктура"}
 		b.Issue.Status = Ref{ID: 1, Name: "Новая"}
 		b.Issue.Updated = time.Now().Format(time.RFC3339)
-		d.issues = append([]Issue{b.Issue}, d.issues...)
+		d.attach(&b.Issue.Issue, b.Issue.Uploads)
+		d.issues = append([]Issue{b.Issue.Issue}, d.issues...)
 		value = map[string]any{"issue": b.Issue}
 		code = 201
 	case strings.HasPrefix(path, "/issues/"):
@@ -112,6 +143,10 @@ func (d *demoTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 			_ = json.NewDecoder(r.Body).Decode(&b)
 			for k, raw := range b.Issue {
 				switch k {
+				case "uploads":
+					var uploads []Upload
+					_ = json.Unmarshal(raw, &uploads)
+					d.attach(v, uploads)
 				case "subject":
 					_ = json.Unmarshal(raw, &v.Subject)
 				case "description":
@@ -162,4 +197,14 @@ func (d *demoTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	b, _ := json.Marshal(value)
 	return &http.Response{StatusCode: code, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(string(b))), Request: r}, nil
+}
+
+func (d *demoTransport) attach(v *Issue, uploads []Upload) {
+	for _, u := range uploads {
+		data, ok := d.uploads[u.Token]
+		if !ok {
+			continue
+		}
+		v.Attachments = append(v.Attachments, Attachment{ID: len(v.Attachments) + 1, Filename: u.Filename, Size: int64(len(data)), ContentType: u.ContentType, ContentURL: "https://demo.invalid/attachments/download/" + u.Token + "/" + url.PathEscape(u.Filename), Author: Ref{Name: "Иванов Сергей"}, Created: time.Now().Format(time.RFC3339)})
+	}
 }

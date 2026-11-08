@@ -57,4 +57,10 @@ func (u *UI) stopPaneRequests() {
 		u.detailLoading.Stop()
 	}
 }
-func (u *UI) stopWork() { u.cancelAuthentication(); u.stopPaneRequests() }
+func (u *UI) stopWork() {
+	u.cancelAuthentication()
+	u.stopPaneRequests()
+	for _, cancel := range u.transferCancels {
+		cancel()
+	}
+}
