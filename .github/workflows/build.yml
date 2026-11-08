@@ -37,6 +37,7 @@ jobs:
         if: runner.os == 'Windows'
         with:
           msystem: MINGW64
+          release: false
           install: mingw-w64-x86_64-gcc
       - name: Configure Windows C compiler
         if: runner.os == 'Windows'
