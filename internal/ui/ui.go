@@ -24,6 +24,11 @@ import (
 const service = "org.redmine-go.desktop"
 
 type UI struct {
+	post                                                           func(func())
+	secretReader                                                   func(string, string) (string, error)
+	listLoading, detailLoading, authLoading                        *loadingPanel
+	listCancel, detailCancel, authCancel                           context.CancelFunc
+	authGeneration                                                 int
 	navButtons                                                     map[string]*widget.Button
 	app                                                            fyne.App
 	win                                                            fyne.Window
@@ -46,19 +51,28 @@ type UI struct {
 	metadataCancel                                                 context.CancelFunc
 }
 
-func New(a fyne.App) *UI {
+func New(a fyne.App) *UI     { return newUI(a, true) }
+func NewDemo(a fyne.App) *UI { u := newUI(a, false); u.Demo(); return u }
+func newUI(a fyne.App, restore bool) *UI {
 	s, e := settings.Load()
 	a.Settings().SetTheme(appTheme{Mode: appearanceMode(s.Appearance), Dark: s.Appearance == "dark"})
 	u := &UI{app: a, win: a.NewWindow("redmineapp"), cfg: s, mode: "Мои", status: "open"}
 	u.win.Resize(fyne.NewSize(1240, 820))
-	u.login()
-	if e != nil {
-		dialog.ShowError(fmt.Errorf("чтение настроек: %w", e), u.win)
+	u.win.SetOnClosed(u.stopWork)
+	if restore {
+		if e != nil {
+			u.login("Не удалось прочитать настройки: " + e.Error())
+		} else {
+			u.restoreSession()
+		}
 	}
 	return u
 }
 func (u *UI) Run() { u.win.ShowAndRun() }
-func (u *UI) login() {
+func (u *UI) login(messages ...string) {
+	u.stopWork()
+	u.client = nil
+	screen := u.authGeneration
 	name := widget.NewEntry()
 	name.SetPlaceHolder("Рабочий Redmine")
 	server := widget.NewEntry()
@@ -110,12 +124,12 @@ func (u *UI) login() {
 				auth.SetSelected("API-ключ")
 			}
 			go func() {
-				secret, e := keyring.Get(service, p.CredentialID())
+				secret, e := u.getSecret(service, p.CredentialID())
 				if e != nil {
 					return
 				}
-				fyne.Do(func() {
-					if server.Text != p.URL {
+				u.enqueue(func() {
+					if u.authGeneration != screen || server.Text != p.URL {
 						return
 					}
 					if p.Auth == "basic" {
@@ -139,6 +153,9 @@ func (u *UI) login() {
 		profiles.SetSelected(names[idx])
 	}
 	message := label("REST API должен быть включён в Redmine. Для защиты данных используйте HTTPS.")
+	if len(messages) > 0 {
+		message.SetText(messages[0])
+	}
 	var connect *widget.Button
 	connect = widget.NewButton("Подключиться", func() {
 		var c *redmine.Client
@@ -164,22 +181,29 @@ func (u *UI) login() {
 			p.Name = c.Base.Host
 		}
 		saveSecret := remember.Checked
+		p.AutoLogin = new(bool)
+		g := u.authGeneration
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		u.authCancel = cancel
 		connect.Disable()
 		message.SetText("Проверяем подключение…")
 		go func() {
-			me, e := c.Me(context.Background())
+			defer cancel()
+			me, e := c.Me(ctx)
 			var warning error
-			if e == nil && saveSecret {
+			if e == nil && ctx.Err() == nil && saveSecret {
 				warning = keyring.Set(service, p.CredentialID(), secret)
+				*p.AutoLogin = warning == nil
 			}
-			fyne.Do(func() {
+			u.enqueue(func() {
+				if g != u.authGeneration {
+					return
+				}
 				connect.Enable()
 				if e != nil {
 					message.SetText(e.Error())
 					return
 				}
-				u.client = c
-				u.me = me
 				found := false
 				for i, old := range u.cfg.Profiles {
 					if old.CredentialID() == p.CredentialID() {
@@ -194,9 +218,7 @@ func (u *UI) login() {
 					u.cfg.Active = len(u.cfg.Profiles) - 1
 				}
 				saveErr := u.cfg.Save()
-				u.shell()
-				u.loadMetadata()
-				u.refresh()
+				u.startSession(c, me)
 				if warning != nil {
 					dialog.ShowInformation("Вход без сохранения секрета", "Системное хранилище недоступно. Данные входа останутся только в памяти: "+warning.Error(), u.win)
 				}
@@ -258,15 +280,7 @@ func (u *UI) shell() {
 		navButtons[n.name] = button
 		nav.Add(button)
 	}
-	navBottom := container.NewVBox(u.appearanceControl(), widget.NewButtonWithIcon("Новая задача", theme.ContentAddIcon(), u.createIssue), widget.NewButtonWithIcon("Подключения", theme.SettingsIcon(), func() {
-		u.generation++
-		u.detailGeneration++
-		if u.metadataCancel != nil {
-			u.metadataCancel()
-		}
-		u.client = nil
-		u.login()
-	}))
+	navBottom := container.NewVBox(u.appearanceControl(), widget.NewButtonWithIcon("Новая задача", theme.ContentAddIcon(), u.createIssue), widget.NewButtonWithIcon("Подключения", theme.SettingsIcon(), func() { u.login() }))
 	sidebar := newPanel(container.NewBorder(nav, navBottom, nil, nil, layout.NewSpacer()))
 	u.heading = widget.NewLabelWithStyle(u.mode, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	u.heading.Truncation = fyne.TextTruncateEllipsis
@@ -328,7 +342,9 @@ func (u *UI) shell() {
 		}
 	})
 	u.next = widget.NewButton("→", func() { u.offset += 50; u.refresh() })
-	mid := container.NewBorder(container.NewVBox(container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), u.refresh), u.heading), filter, search), container.NewBorder(nil, nil, u.prev, u.next, u.footer), nil, nil, u.list)
+	u.listLoading = newLoadingPanel("Загружаем задачи…")
+	u.detailLoading = newLoadingPanel("Загружаем задачу…")
+	mid := container.NewBorder(container.NewVBox(container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), u.refresh), u.heading), filter, search), container.NewBorder(nil, nil, u.prev, u.next, u.footer), nil, nil, container.NewStack(u.list, u.listLoading.view))
 	u.detail = container.NewStack(container.NewCenter(widget.NewLabel("Выберите задачу")))
 	right := container.NewHSplit(container.NewPadded(mid), container.NewPadded(u.detail))
 	right.Offset = .41
@@ -353,7 +369,7 @@ func (u *UI) loadMetadata() {
 	c := u.client
 	go func() {
 		refs, e := c.Projects(ctx, func(refs []redmine.Ref, total int) {
-			fyne.Do(func() {
+			u.enqueue(func() {
 				if u.client != c || ctx.Err() != nil {
 					return
 				}
@@ -362,7 +378,7 @@ func (u *UI) loadMetadata() {
 				u.updateProjectPicker()
 			})
 		})
-		fyne.Do(func() {
+		u.enqueue(func() {
 			if u.client != c {
 				return
 			}
@@ -379,7 +395,7 @@ func (u *UI) loadMetadata() {
 		resource := resource
 		go func() {
 			refs, e := c.Refs(ctx, resource.path, resource.root)
-			fyne.Do(func() {
+			u.enqueue(func() {
 				if u.client != c || ctx.Err() != nil {
 					return
 				}
@@ -400,6 +416,9 @@ func (u *UI) updateProjectPicker() {
 func (u *UI) refresh() {
 	if u.client == nil || u.list == nil {
 		return
+	}
+	if u.listCancel != nil {
+		u.listCancel()
 	}
 	u.generation++
 	g := u.generation
@@ -435,6 +454,8 @@ func (u *UI) refresh() {
 			u.list.Refresh()
 			u.heading.SetText(u.mode)
 			u.footer.SetText("Нет избранных задач")
+			u.list.Hide()
+			u.listLoading.Message("Нет избранных задач")
 			u.prev.Disable()
 			u.next.Disable()
 			return
@@ -443,18 +464,30 @@ func (u *UI) refresh() {
 	}
 	u.heading.SetText(u.mode)
 	u.footer.SetText("Загрузка…")
+	u.list.Hide()
+	u.listLoading.Start("Загружаем задачи…")
 	u.prev.Disable()
 	u.next.Disable()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	u.listCancel = cancel
 	go func() {
-		p, e := c.Issues(context.Background(), q)
-		fyne.Do(func() {
+		defer cancel()
+		p, e := c.Issues(ctx, q)
+		u.enqueue(func() {
 			if g != u.generation || u.client != c {
 				return
 			}
 			if e != nil {
+				u.listLoading.Message("Не удалось загрузить задачи")
 				u.footer.SetText("Ошибка загрузки")
 				dialog.ShowError(e, u.win)
 				return
+			}
+			u.listLoading.Stop()
+			u.list.Show()
+			if len(p.Issues) == 0 {
+				u.list.Hide()
+				u.listLoading.Message("Задачи не найдены")
 			}
 			u.issues = p.Issues
 			u.total = p.Total
@@ -476,19 +509,26 @@ func (u *UI) openIssue(id int) {
 	if u.list != nil {
 		u.list.Refresh()
 	}
+	if u.detailCancel != nil {
+		u.detailCancel()
+	}
 	u.detailGeneration++
 	g := u.detailGeneration
 	c := u.client
-	u.detail.Objects = []fyne.CanvasObject{container.NewCenter(widget.NewLabel("Загрузка задачи…"))}
+	u.detail.Objects = []fyne.CanvasObject{u.detailLoading.view}
+	u.detailLoading.Start("Загружаем задачу…")
 	u.detail.Refresh()
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	u.detailCancel = cancel
 	go func() {
-		v, e := c.Issue(context.Background(), id)
-		fyne.Do(func() {
+		defer cancel()
+		v, e := c.Issue(ctx, id)
+		u.enqueue(func() {
 			if u.client != c || g != u.detailGeneration {
 				return
 			}
 			if e != nil {
-				u.detail.Objects = []fyne.CanvasObject{label(e.Error())}
+				u.detailLoading.Message(e.Error())
 				u.detail.Refresh()
 				return
 			}
@@ -497,6 +537,9 @@ func (u *UI) openIssue(id int) {
 	}()
 }
 func (u *UI) showIssue(v redmine.Issue) {
+	if u.detailLoading != nil {
+		u.detailLoading.Stop()
+	}
 	title := widget.NewRichText(&widget.TextSegment{Text: v.Subject, Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Bold: true}, SizeName: theme.SizeNameHeadingText}})
 	title.Wrapping = fyne.TextWrapWord
 	favorite := widget.NewButtonWithIcon("", starIcon, nil)
@@ -552,7 +595,7 @@ func (u *UI) mutation(work func() error, done func()) {
 	c := u.client
 	go func() {
 		e := work()
-		fyne.Do(func() {
+		u.enqueue(func() {
 			if u.client != c {
 				return
 			}
@@ -714,6 +757,7 @@ func (u *UI) logTime(id int) {
 
 // Demo opens an isolated in-memory connection without persisting credentials.
 func (u *UI) Demo() {
+	u.stopWork()
 	u.client = redmine.NewDemo()
 	u.me = redmine.User{ID: 1, Firstname: "Сергей", Lastname: "Иванов"}
 	u.mode = "Слежу"

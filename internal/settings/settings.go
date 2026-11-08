@@ -11,10 +11,11 @@ import (
 )
 
 type Profile struct {
-	Name     string `json:"name"`
-	URL      string `json:"url"`
-	Auth     string `json:"auth,omitempty"`
-	Username string `json:"username,omitempty"`
+	Name      string `json:"name"`
+	URL       string `json:"url"`
+	Auth      string `json:"auth,omitempty"`
+	Username  string `json:"username,omitempty"`
+	AutoLogin *bool  `json:"auto_login,omitempty"`
 }
 type Settings struct {
 	Appearance string          `json:"appearance,omitempty"`

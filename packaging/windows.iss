@@ -1,7 +1,7 @@
 [Setup]
 AppId=org.redmine-go.desktop
 AppName=redmineapp
-AppVersion=0.1.0
+AppVersion=0.1.1
 DefaultDirName={autopf}\redmineapp
 DefaultGroupName=redmineapp
 OutputDir=..\dist

@@ -19,9 +19,11 @@ func main() {
 	flag.Parse()
 	a := app.NewWithID("org.redmine-go.desktop")
 	a.SetIcon(fyne.NewStaticResource("redmine.png", icon))
-	u := ui.New(a)
+	var u *ui.UI
 	if *demo {
-		u.Demo()
+		u = ui.NewDemo(a)
+	} else {
+		u = ui.New(a)
 	}
 	u.Run()
 }
