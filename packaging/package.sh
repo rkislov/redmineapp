@@ -37,7 +37,7 @@ Package: redmineapp
 Version: 0.1.0
 Architecture: $(go env GOARCH)
 Maintainer: redmineapp contributors
-Depends: libgl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1
+Depends: libgl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libxxf86vm1, libwayland-client0, libwayland-cursor0, libwayland-egl1, libxkbcommon0, libegl1
 Description: Native cross-platform Redmine desktop client written in Go
 CONTROL
    dpkg-deb --build --root-owner-group "$stage" "dist/redmineapp-linux-$(go env GOARCH).deb"

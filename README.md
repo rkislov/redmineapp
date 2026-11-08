@@ -31,7 +31,7 @@ go run .
 go run . --demo
 ```
 
-Для macOS установите Command Line Tools (`xcode-select --install`). Linux: `sudo apt-get install gcc libgl1-mesa-dev xorg-dev`. Windows: MinGW-w64 GCC в PATH; сборка из Git Bash или MSYS2.
+Для macOS установите Command Line Tools (`xcode-select --install`). Linux: `sudo apt-get install gcc libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev libegl1-mesa-dev`. Windows: MinGW-w64 GCC в PATH; сборка из Git Bash или MSYS2.
 
 ```sh
 make test
