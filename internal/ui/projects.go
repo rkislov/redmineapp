@@ -19,6 +19,10 @@ import (
 )
 
 type projectPicker struct {
+	total                         int
+	activity                      *widget.Activity
+	status                        *fyne.Container
+	progress                      *widget.Label
 	loading                       bool
 	loadError                     error
 	all, filtered, visible        []redmine.Ref
@@ -41,6 +45,13 @@ func newProjectPicker(projects []redmine.Ref, choose func(redmine.Ref), cancel f
 	p.selection = widget.NewLabel("Выберите проект в списке")
 	p.selection.Wrapping = fyne.TextWrapWord
 	p.empty = label("Проекты не найдены. Попробуйте другой запрос.")
+	p.empty.Alignment = fyne.TextAlignCenter
+	p.activity = widget.NewActivity()
+	p.activity.Hide()
+	p.progress = widget.NewLabel("")
+	p.progress.Wrapping = fyne.TextWrapWord
+	p.progress.Alignment = fyne.TextAlignCenter
+	p.status = container.New(centeredStatusLayout{}, container.NewVBox(container.NewCenter(p.activity), p.empty))
 	p.list = widget.NewList(func() int { return len(p.visible) }, func() fyne.CanvasObject {
 		title := widget.NewLabel("Проект")
 		title.Truncation = fyne.TextTruncateEllipsis
@@ -80,8 +91,8 @@ func newProjectPicker(projects []redmine.Ref, choose func(redmine.Ref), cancel f
 	pager := container.NewBorder(nil, nil, container.NewHBox(p.first, p.prev), container.NewHBox(p.next, p.last), container.NewCenter(p.count))
 	selectionScroll := container.NewVScroll(p.selection)
 	selectionScroll.SetMinSize(fyne.NewSize(0, 44))
-	bottom := container.NewVBox(selectionScroll, container.NewHBox(widget.NewLabel("На странице"), p.sizeSelect), pager, widget.NewSeparator(), container.NewHBox(layout.NewSpacer(), widget.NewButton("Отмена", cancel), p.open))
-	p.content = container.NewBorder(header, bottom, nil, nil, container.NewStack(container.NewThemeOverride(p.list, projectListTheme{}), container.NewCenter(p.empty)))
+	bottom := container.NewVBox(p.progress, selectionScroll, container.NewHBox(widget.NewLabel("На странице"), p.sizeSelect), pager, widget.NewSeparator(), container.NewHBox(layout.NewSpacer(), widget.NewButton("Отмена", cancel), p.open))
+	p.content = container.NewBorder(header, bottom, nil, nil, container.NewStack(container.NewThemeOverride(p.list, projectListTheme{}), p.status))
 	p.refilter()
 	return p
 }
@@ -131,7 +142,7 @@ func (p *projectPicker) goTo(page int) {
 	p.selection.SetText("Выберите проект в списке")
 	if len(p.filtered) == 0 {
 		p.list.Hide()
-		p.empty.Show()
+		p.status.Show()
 		p.empty.SetText("Проекты не найдены. Попробуйте другой запрос.")
 		if p.loading {
 			p.empty.SetText("Загружаем список проектов…")
@@ -139,8 +150,11 @@ func (p *projectPicker) goTo(page int) {
 			p.empty.SetText("Не удалось загрузить проекты: " + p.loadError.Error())
 		}
 		p.count.SetText("Найдено: 0")
+		if p.loading {
+			p.count.SetText("Загрузка…")
+		}
 	} else {
-		p.empty.Hide()
+		p.status.Hide()
 		p.list.Show()
 		p.count.SetText(fmt.Sprintf("%d–%d из %d · %d / %d", start+1, end, len(p.filtered), p.page+1, p.pages()))
 	}
@@ -148,6 +162,27 @@ func (p *projectPicker) goTo(page int) {
 	p.prev.Disable()
 	p.next.Disable()
 	p.last.Disable()
+	p.activity.Stop()
+	p.activity.Hide()
+	p.progress.Hide()
+	if p.loading {
+		if len(p.filtered) == 0 {
+			p.activity.Show()
+			p.activity.Start()
+		}
+		if len(p.all) > 0 {
+			p.progress.Show()
+		}
+		if p.total > 0 {
+			p.progress.SetText(fmt.Sprintf("Загружено %d из %d · Можно выбирать проект", len(p.all), p.total))
+		} else {
+			p.progress.SetText("Подключаемся к серверу…")
+		}
+	}
+	if p.loadError != nil && len(p.all) > 0 {
+		p.progress.Show()
+		p.progress.SetText("Показана загруженная часть списка. " + p.loadError.Error())
+	}
 	if p.page > 0 {
 		p.first.Enable()
 		p.prev.Enable()
@@ -166,14 +201,13 @@ func (u *UI) showProjectPicker(choose func(redmine.Ref)) {
 	var d *dialog.CustomDialog
 	p := newProjectPicker(u.projects, func(v redmine.Ref) { d.Hide(); choose(v) }, func() { d.Hide() })
 	u.activeProjects = p
-	p.loading = u.projectsLoading
-	p.loadError = u.projectsError
-	p.refilter()
+	p.updateProjects(u.projects, u.projectsTotal, u.projectsLoading, u.projectsError)
 	d = dialog.NewCustomWithoutButtons("Проекты", p.content, u.win)
 	d.SetOnClosed(func() {
 		if u.activeProjects == p {
 			u.activeProjects = nil
 		}
+		p.activity.Stop()
 	})
 	size := u.win.Canvas().Size()
 	d.Resize(fyne.NewSize(min(740, max(320, size.Width-64)), min(620, max(360, size.Height-64))))
@@ -201,4 +235,48 @@ func (projectListTheme) Font(s fyne.TextStyle) fyne.Resource {
 }
 func (projectListTheme) Icon(n fyne.ThemeIconName) fyne.Resource {
 	return fyne.CurrentApp().Settings().Theme().Icon(n)
+}
+
+func (p *projectPicker) updateProjects(projects []redmine.Ref, total int, loading bool, err error) {
+	page := p.page
+	selectedID := 0
+	if p.selected >= 0 && p.selected < len(p.visible) {
+		selectedID = p.visible[p.selected].ID
+	}
+	p.all = append([]redmine.Ref(nil), projects...)
+	p.total = total
+	p.loading = loading
+	p.loadError = err
+	p.refilter()
+	if selectedID != 0 {
+		for i, v := range p.filtered {
+			if v.ID == selectedID {
+				page = i / p.pageSize
+				break
+			}
+		}
+	}
+	p.goTo(page)
+	if selectedID != 0 {
+		for i, v := range p.visible {
+			if v.ID == selectedID {
+				p.list.Select(i)
+				break
+			}
+		}
+	}
+}
+
+// Fill the status area's width for wrapping/alignment, and center the whole group vertically.
+type centeredStatusLayout struct{}
+
+func (centeredStatusLayout) MinSize([]fyne.CanvasObject) fyne.Size { return fyne.NewSize(0, 0) }
+func (centeredStatusLayout) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	for _, o := range objects {
+		h := o.MinSize().Height
+		o.Resize(fyne.NewSize(size.Width, h))
+		h = o.MinSize().Height
+		o.Resize(fyne.NewSize(size.Width, h))
+		o.Move(fyne.NewPos(0, max(0, (size.Height-h)/2)))
+	}
 }

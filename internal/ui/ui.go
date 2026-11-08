@@ -42,6 +42,8 @@ type UI struct {
 	projectsLoading                                                bool
 	projectsError                                                  error
 	activeProjects                                                 *projectPicker
+	projectsTotal                                                  int
+	metadataCancel                                                 context.CancelFunc
 }
 
 func New(a fyne.App) *UI {
@@ -256,7 +258,15 @@ func (u *UI) shell() {
 		navButtons[n.name] = button
 		nav.Add(button)
 	}
-	navBottom := container.NewVBox(u.appearanceControl(), widget.NewButtonWithIcon("Новая задача", theme.ContentAddIcon(), u.createIssue), widget.NewButtonWithIcon("Подключения", theme.SettingsIcon(), func() { u.generation++; u.detailGeneration++; u.client = nil; u.login() }))
+	navBottom := container.NewVBox(u.appearanceControl(), widget.NewButtonWithIcon("Новая задача", theme.ContentAddIcon(), u.createIssue), widget.NewButtonWithIcon("Подключения", theme.SettingsIcon(), func() {
+		u.generation++
+		u.detailGeneration++
+		if u.metadataCancel != nil {
+			u.metadataCancel()
+		}
+		u.client = nil
+		u.login()
+	}))
 	sidebar := newPanel(container.NewBorder(nav, navBottom, nil, nil, layout.NewSpacer()))
 	u.heading = widget.NewLabelWithStyle(u.mode, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	u.heading.Truncation = fyne.TextTruncateEllipsis
@@ -327,46 +337,65 @@ func (u *UI) shell() {
 	u.win.SetContent(container.NewPadded(root))
 }
 func (u *UI) loadMetadata() {
+	if u.metadataCancel != nil {
+		u.metadataCancel()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	u.metadataCancel = cancel
 	u.projectsLoading = true
 	u.projectsError = nil
 	u.projects = nil
+	u.projectsTotal = 0
+	u.statuses = nil
+	u.priorities = nil
+	u.trackers = nil
+	u.activities = nil
 	c := u.client
 	go func() {
-		type result struct {
-			v []redmine.Ref
-			e error
-		}
-		paths := [][2]string{{"projects.json", "projects"}, {"issue_statuses.json", "issue_statuses"}, {"enumerations/issue_priorities.json", "issue_priorities"}, {"trackers.json", "trackers"}, {"enumerations/time_entry_activities.json", "time_entry_activities"}}
-		results := make([]result, len(paths))
-		for i, p := range paths {
-			results[i].v, results[i].e = c.Refs(context.Background(), p[0], p[1])
-		}
+		refs, e := c.Projects(ctx, func(refs []redmine.Ref, total int) {
+			fyne.Do(func() {
+				if u.client != c || ctx.Err() != nil {
+					return
+				}
+				u.projects = refs
+				u.projectsTotal = total
+				u.updateProjectPicker()
+			})
+		})
 		fyne.Do(func() {
 			if u.client != c {
 				return
 			}
-			u.projects = results[0].v
+			u.projects = refs
 			u.projectsLoading = false
-			u.projectsError = results[0].e
-			if u.activeProjects != nil {
-				p := u.activeProjects
-				p.all = append([]redmine.Ref(nil), u.projects...)
-				p.loading = false
-				p.loadError = u.projectsError
-				p.refilter()
-			}
-			u.statuses = results[1].v
-			u.priorities = results[2].v
-			u.trackers = results[3].v
-			u.activities = results[4].v
-			for _, r := range results {
-				if r.e != nil {
-					dialog.ShowInformation("Справочники", "Часть справочников недоступна: "+r.e.Error(), u.win)
-					break
-				}
-			}
+			u.projectsError = e
+			u.updateProjectPicker()
 		})
 	}()
+	for _, resource := range []struct {
+		path, root string
+		target     *[]redmine.Ref
+	}{{"issue_statuses.json", "issue_statuses", &u.statuses}, {"enumerations/issue_priorities.json", "issue_priorities", &u.priorities}, {"trackers.json", "trackers", &u.trackers}, {"enumerations/time_entry_activities.json", "time_entry_activities", &u.activities}} {
+		resource := resource
+		go func() {
+			refs, e := c.Refs(ctx, resource.path, resource.root)
+			fyne.Do(func() {
+				if u.client != c || ctx.Err() != nil {
+					return
+				}
+				if e != nil {
+					dialog.ShowInformation("Справочник недоступен", e.Error(), u.win)
+					return
+				}
+				*resource.target = refs
+			})
+		}()
+	}
+}
+func (u *UI) updateProjectPicker() {
+	if p := u.activeProjects; p != nil {
+		p.updateProjects(u.projects, u.projectsTotal, u.projectsLoading, u.projectsError)
+	}
 }
 func (u *UI) refresh() {
 	if u.client == nil || u.list == nil {

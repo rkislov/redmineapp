@@ -111,3 +111,56 @@ func TestAutoAppearanceTracksSystemVariant(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectLoadingStatusCenteredAndPartialPagesUsable(t *testing.T) {
+	a := test.NewApp()
+	defer a.Quit()
+	a.Settings().SetTheme(appTheme{})
+	p := newProjectPicker(nil, func(redmine.Ref) {}, func() {})
+	w := a.NewWindow("redmineapp — загрузка проектов")
+	w.Resize(fyne.NewSize(740, 620))
+	w.SetContent(container.NewPadded(p.content))
+	p.updateProjects(nil, 0, true, nil)
+	w.Content().Refresh()
+	if p.empty.Alignment != fyne.TextAlignCenter || p.empty.Size().Width < p.status.Size().Width-1 {
+		t.Fatal("loading text must span the centered status area")
+	}
+	group := p.status.Objects[0]
+	if delta := group.Position().Y + group.Size().Height/2 - p.status.Size().Height/2; delta < -1 || delta > 1 {
+		t.Fatal("status group is not vertically centered")
+	}
+	if p.count.Text == "Найдено: 0" {
+		t.Fatal("loading was presented as an empty result")
+	}
+	if file := os.Getenv("REDMINE_LOADING_SCREENSHOT"); file != "" {
+		f, e := os.Create(file)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer f.Close()
+		if e = png.Encode(f, w.Canvas().Capture()); e != nil {
+			t.Fatal(e)
+		}
+	}
+	refs := []redmine.Ref{}
+	for i := 1; i <= 100; i++ {
+		refs = append(refs, redmine.Ref{ID: i, Name: fmt.Sprintf("Проект %03d", i)})
+	}
+	p.updateProjects(refs, 1400, true, nil)
+	if !p.status.Hidden || p.list.Hidden || len(p.visible) != 20 {
+		t.Fatal("partial list should be usable before all pages finish")
+	}
+	p.goTo(2)
+	p.list.Select(1)
+	id := p.visible[1].ID
+	refs = append(refs, redmine.Ref{ID: 1001, Name: "А самый первый проект"})
+	p.updateProjects(refs, 1400, true, nil)
+	if p.page != 2 || p.selected < 0 || p.visible[p.selected].ID != id {
+		t.Fatal("incoming pages changed selected project")
+	}
+	p.search.SetText("самый первый")
+	p.updateProjects(refs, 101, false, nil)
+	if len(p.visible) != 1 || p.visible[0].ID != 1001 {
+		t.Fatal("incoming pages reset search")
+	}
+}
