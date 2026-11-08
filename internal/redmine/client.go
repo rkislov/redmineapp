@@ -16,8 +16,9 @@ import (
 )
 
 type Ref struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	IsClosed bool   `json:"is_closed,omitempty"`
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
 }
 type User struct {
 	ID        int    `json:"id"`
@@ -31,21 +32,22 @@ type Journal struct {
 	Created string `json:"created_on"`
 }
 type Issue struct {
-	ID          int       `json:"id"`
-	Subject     string    `json:"subject"`
-	Description string    `json:"description"`
-	Project     Ref       `json:"project"`
-	Tracker     Ref       `json:"tracker"`
-	Status      Ref       `json:"status"`
-	Priority    Ref       `json:"priority"`
-	AssignedTo  Ref       `json:"assigned_to"`
-	Author      Ref       `json:"author"`
-	Done        int       `json:"done_ratio"`
-	Start       string    `json:"start_date"`
-	Due         string    `json:"due_date"`
-	Updated     string    `json:"updated_on"`
-	Spent       float64   `json:"spent_hours"`
-	Journals    []Journal `json:"journals"`
+	AllowedStatuses []Ref     `json:"allowed_statuses"`
+	ID              int       `json:"id"`
+	Subject         string    `json:"subject"`
+	Description     string    `json:"description"`
+	Project         Ref       `json:"project"`
+	Tracker         Ref       `json:"tracker"`
+	Status          Ref       `json:"status"`
+	Priority        Ref       `json:"priority"`
+	AssignedTo      Ref       `json:"assigned_to"`
+	Author          Ref       `json:"author"`
+	Done            int       `json:"done_ratio"`
+	Start           string    `json:"start_date"`
+	Due             string    `json:"due_date"`
+	Updated         string    `json:"updated_on"`
+	Spent           float64   `json:"spent_hours"`
+	Journals        []Journal `json:"journals"`
 }
 type Page struct {
 	Issues []Issue `json:"issues"`

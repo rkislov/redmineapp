@@ -328,7 +328,7 @@ func (u *UI) shell() {
 		}
 	})
 	u.next = widget.NewButton("→", func() { u.offset += 50; u.refresh() })
-	mid := container.NewBorder(container.NewVBox(container.NewBorder(nil, nil, u.heading, widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), u.refresh)), filter, search), container.NewBorder(nil, nil, u.prev, u.next, u.footer), nil, nil, u.list)
+	mid := container.NewBorder(container.NewVBox(container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), u.refresh), u.heading), filter, search), container.NewBorder(nil, nil, u.prev, u.next, u.footer), nil, nil, u.list)
 	u.detail = container.NewStack(container.NewCenter(widget.NewLabel("Выберите задачу")))
 	right := container.NewHSplit(container.NewPadded(mid), container.NewPadded(u.detail))
 	right.Offset = .41
@@ -519,8 +519,14 @@ func (u *UI) showIssue(v redmine.Issue) {
 			u.refresh()
 		}
 	}
-	head := container.NewVBox(container.NewBorder(nil, nil, label(fmt.Sprintf("#%d · %s", v.ID, v.Project.Name)), favorite), container.NewHBox(func() *badge { b := newBadge(); b.Set(v.Status.Name); return b }(), label(v.Tracker.Name)), title, label("Создал(а) "+v.Author.Name))
-	progress := newProgress()
+	closeButton := widget.NewButtonWithIcon("Закрыть", theme.ConfirmIcon(), func() { u.closeIssue(v) })
+	if statusIsClosed(v.Status, u.statuses) {
+		closeButton.SetText("Закрыта")
+		closeButton.Disable()
+	}
+	head := container.NewVBox(container.NewBorder(nil, nil, label(fmt.Sprintf("#%d · %s", v.ID, v.Project.Name)), container.NewHBox(favorite, closeButton)), container.NewHBox(func() *badge { b := newBadge(); b.Set(v.Status.Name); return b }(), label(v.Tracker.Name)), title, label("Создал(а) "+v.Author.Name))
+	progress := newEditableProgress()
+	progress.OnChanged = func(value int) { u.setIssueProgress(v.ID, progress, value) }
 	progress.SetValue(float64(v.Done) / 100)
 	attrs := widget.NewForm(widget.NewFormItem("Статус", label(v.Status.Name)), widget.NewFormItem("Приоритет", label(v.Priority.Name)), widget.NewFormItem("Исполнитель", container.NewBorder(nil, nil, nil, widget.NewButton("Взять", func() { u.update(v.ID, map[string]any{"assigned_to_id": u.me.ID}) }), label(v.AssignedTo.Name))), widget.NewFormItem("Готовность", progress), widget.NewFormItem("Начало", label(v.Start)), widget.NewFormItem("Срок", label(v.Due)), widget.NewFormItem("Затрачено", label(fmt.Sprintf("%.2f ч", v.Spent))), widget.NewFormItem("Обновлено", label(formatDate(v.Updated))))
 	body := container.NewVBox(head, newPanel(attrs), widget.NewLabelWithStyle("Описание", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), newPanel(label(v.Description)), widget.NewLabelWithStyle("Комментарии", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
@@ -600,7 +606,7 @@ func (u *UI) editIssue(v redmine.Issue) {
 	desc := widget.NewMultiLineEntry()
 	desc.SetMinRowsVisible(4)
 	desc.SetText(v.Description)
-	status, statusID := selectRef(u.statuses, v.Status.ID)
+	status, statusID := u.searchableRef("Выберите статус", issueStatusChoices(v, u.statuses), v.Status.ID)
 	priority, priorityID := selectRef(u.priorities, v.Priority.ID)
 	ratio := widget.NewSelect([]string{"0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"}, nil)
 	ratio.SetSelected(strconv.Itoa(v.Done))

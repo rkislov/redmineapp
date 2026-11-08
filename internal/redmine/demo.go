@@ -26,7 +26,7 @@ func NewDemo() *Client {
 	names := []string{"Выпуск инфраструктуры", "План разработки 2027", "Пуско-наладочные работы по тестированию инфраструктуры", "Регистрация сделки и запрос цен", "Интеграция процессов в сервисах"}
 	d := &demoTransport{next: 246620}
 	for n, s := range names {
-		d.issues = append(d.issues, Issue{ID: 246612 + n, Subject: s, Description: "Требуется подготовить всё для тестирования инфраструктуры.\n\nПосле коммита в репозиторий должен запуститься процесс автоматизированного тестирования с отчётом в задачу.\n\nЭто демонстрационные данные. Изменения сохраняются только до закрытия приложения.", Project: Ref{1, "Инфраструктура"}, Tracker: Ref{2, "Задача"}, Status: Ref{2, "В работе"}, Priority: Ref{2, "Нормальный"}, Author: Ref{1, "Антон Палгунов"}, AssignedTo: Ref{1, "Иванов Сергей"}, Done: []int{62, 10, 0, 60, 20}[n], Start: "2026-07-28", Updated: "2026-10-23T18:57:00+03:00", Spent: 55.5, Journals: []Journal{{ID: 1, User: Ref{1, "Антон Палгунов"}, Notes: "Окружение подготовлено. Можно начинать проверку.", Created: "2026-10-24T10:00:00+03:00"}}})
+		d.issues = append(d.issues, Issue{ID: 246612 + n, Subject: s, Description: "Требуется подготовить всё для тестирования инфраструктуры.\n\nПосле коммита в репозиторий должен запуститься процесс автоматизированного тестирования с отчётом в задачу.\n\nЭто демонстрационные данные. Изменения сохраняются только до закрытия приложения.", Project: Ref{ID: 1, Name: "Инфраструктура"}, Tracker: Ref{ID: 2, Name: "Задача"}, Status: Ref{ID: 2, Name: "В работе"}, Priority: Ref{ID: 2, Name: "Нормальный"}, Author: Ref{ID: 1, Name: "Антон Палгунов"}, AssignedTo: Ref{ID: 1, Name: "Иванов Сергей"}, Done: []int{62, 10, 0, 60, 20}[n], Start: "2026-07-28", Updated: "2026-10-23T18:57:00+03:00", Spent: 55.5, Journals: []Journal{{ID: 1, User: Ref{ID: 1, Name: "Антон Палгунов"}, Notes: "Окружение подготовлено. Можно начинать проверку.", Created: "2026-10-24T10:00:00+03:00"}}})
 	}
 	c.HTTP = &http.Client{Transport: d, Timeout: time.Second}
 	return c
@@ -41,15 +41,15 @@ func (d *demoTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	case path == "/users/current.json":
 		value = map[string]any{"user": User{ID: 1, Firstname: "Сергей", Lastname: "Иванов"}}
 	case path == "/projects.json":
-		value = map[string]any{"projects": []Ref{{1, "Инфраструктура"}, {2, "Продукты"}}, "total_count": 2}
+		value = map[string]any{"projects": []Ref{{ID: 1, Name: "Инфраструктура"}, {ID: 2, Name: "Продукты"}}, "total_count": 2}
 	case path == "/issue_statuses.json":
-		value = map[string]any{"issue_statuses": []Ref{{1, "Новая"}, {2, "В работе"}, {3, "Решена"}, {4, "Закрыта"}}}
+		value = map[string]any{"issue_statuses": []Ref{{ID: 1, Name: "Новая"}, {ID: 2, Name: "В работе"}, {ID: 3, Name: "Решена", IsClosed: true}, {ID: 4, Name: "Закрыта", IsClosed: true}}}
 	case path == "/trackers.json":
-		value = map[string]any{"trackers": []Ref{{1, "Ошибка"}, {2, "Задача"}}}
+		value = map[string]any{"trackers": []Ref{{ID: 1, Name: "Ошибка"}, {ID: 2, Name: "Задача"}}}
 	case path == "/enumerations/issue_priorities.json":
-		value = map[string]any{"issue_priorities": []Ref{{1, "Низкий"}, {2, "Нормальный"}, {3, "Высокий"}}}
+		value = map[string]any{"issue_priorities": []Ref{{ID: 1, Name: "Низкий"}, {ID: 2, Name: "Нормальный"}, {ID: 3, Name: "Высокий"}}}
 	case path == "/enumerations/time_entry_activities.json":
-		value = map[string]any{"time_entry_activities": []Ref{{1, "Разработка"}, {2, "Тестирование"}}}
+		value = map[string]any{"time_entry_activities": []Ref{{ID: 1, Name: "Разработка"}, {ID: 2, Name: "Тестирование"}}}
 	case path == "/issues.json" && r.Method == "GET":
 		issues := []Issue{}
 		q := r.URL.Query()
@@ -85,8 +85,8 @@ func (d *demoTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		_ = json.NewDecoder(r.Body).Decode(&b)
 		b.Issue.ID = d.next
 		d.next++
-		b.Issue.Project = Ref{1, "Инфраструктура"}
-		b.Issue.Status = Ref{1, "Новая"}
+		b.Issue.Project = Ref{ID: 1, Name: "Инфраструктура"}
+		b.Issue.Status = Ref{ID: 1, Name: "Новая"}
 		b.Issue.Updated = time.Now().Format(time.RFC3339)
 		d.issues = append([]Issue{b.Issue}, d.issues...)
 		value = map[string]any{"issue": b.Issue}
@@ -121,20 +121,20 @@ func (d *demoTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 				case "due_date":
 					_ = json.Unmarshal(raw, &v.Due)
 				case "assigned_to_id":
-					v.AssignedTo = Ref{1, "Иванов Сергей"}
+					v.AssignedTo = Ref{ID: 1, Name: "Иванов Сергей"}
 				case "status_id":
 					var n int
 					_ = json.Unmarshal(raw, &n)
 					names := map[int]string{1: "Новая", 2: "В работе", 3: "Решена", 4: "Закрыта"}
-					v.Status = Ref{n, names[n]}
+					v.Status = Ref{ID: n, Name: names[n], IsClosed: n == 3 || n == 4}
 				case "priority_id":
 					var n int
 					_ = json.Unmarshal(raw, &n)
-					v.Priority = Ref{n, map[int]string{1: "Низкий", 2: "Нормальный", 3: "Высокий"}[n]}
+					v.Priority = Ref{ID: n, Name: map[int]string{1: "Низкий", 2: "Нормальный", 3: "Высокий"}[n]}
 				case "notes":
 					var notes string
 					_ = json.Unmarshal(raw, &notes)
-					v.Journals = append(v.Journals, Journal{ID: len(v.Journals) + 1, User: Ref{1, "Иванов Сергей"}, Notes: notes, Created: time.Now().Format(time.RFC3339)})
+					v.Journals = append(v.Journals, Journal{ID: len(v.Journals) + 1, User: Ref{ID: 1, Name: "Иванов Сергей"}, Notes: notes, Created: time.Now().Format(time.RFC3339)})
 				}
 			}
 			v.Updated = time.Now().Format(time.RFC3339)

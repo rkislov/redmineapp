@@ -203,3 +203,38 @@ func TestBasicRedirectDoesNotLeakCredentials(t *testing.T) {
 		t.Fatal("redirect followed with credentials")
 	}
 }
+
+func TestDemoClosedIssueMovesToClosedFilter(t *testing.T) {
+	c := NewDemo()
+	ctx := context.Background()
+	statuses, e := c.Refs(ctx, "issue_statuses.json", "issue_statuses")
+	if e != nil {
+		t.Fatal(e)
+	}
+	closedID := 0
+	for _, s := range statuses {
+		if s.IsClosed {
+			closedID = s.ID
+			break
+		}
+	}
+	if closedID == 0 {
+		t.Fatal("no closed status metadata")
+	}
+	if e = c.Update(ctx, 246614, map[string]any{"status_id": closedID}); e != nil {
+		t.Fatal(e)
+	}
+	open, e := c.Issues(ctx, url.Values{"status_id": {"open"}})
+	if e != nil {
+		t.Fatal(e)
+	}
+	for _, v := range open.Issues {
+		if v.ID == 246614 {
+			t.Fatal("closed issue remained in open list")
+		}
+	}
+	closed, e := c.Issues(ctx, url.Values{"status_id": {"closed"}})
+	if e != nil || len(closed.Issues) != 1 || closed.Issues[0].ID != 246614 {
+		t.Fatal("issue did not move to closed list")
+	}
+}
