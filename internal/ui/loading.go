@@ -58,6 +58,10 @@ func (u *UI) stopPaneRequests() {
 	}
 }
 func (u *UI) stopWork() {
+	for win, cancel := range u.previewWindows {
+		cancel()
+		win.Close()
+	}
 	u.cancelAuthentication()
 	u.stopPaneRequests()
 	for _, cancel := range u.transferCancels {

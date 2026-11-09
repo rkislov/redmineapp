@@ -24,6 +24,7 @@ import (
 const service = "org.redmine-go.desktop"
 
 type UI struct {
+	previewWindows                                                 map[fyne.Window]context.CancelFunc
 	transferCancels                                                map[int]context.CancelFunc
 	transferID                                                     int
 	post                                                           func(func())
@@ -574,12 +575,12 @@ func (u *UI) showIssue(v redmine.Issue) {
 	progress.OnChanged = func(value int) { u.setIssueProgress(v.ID, progress, value) }
 	progress.SetValue(float64(v.Done) / 100)
 	attrs := widget.NewForm(widget.NewFormItem("Статус", label(v.Status.Name)), widget.NewFormItem("Приоритет", label(v.Priority.Name)), widget.NewFormItem("Исполнитель", container.NewBorder(nil, nil, nil, widget.NewButton("Взять", func() { u.update(v.ID, map[string]any{"assigned_to_id": u.me.ID}) }), label(v.AssignedTo.Name))), widget.NewFormItem("Готовность", progress), widget.NewFormItem("Начало", label(v.Start)), widget.NewFormItem("Срок", label(v.Due)), widget.NewFormItem("Затрачено", label(fmt.Sprintf("%.2f ч", v.Spent))), widget.NewFormItem("Обновлено", label(formatDate(v.Updated))))
-	body := container.NewVBox(head, newPanel(attrs), widget.NewLabelWithStyle("Описание", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), newPanel(label(v.Description)), u.attachmentSection(v), widget.NewLabelWithStyle("Комментарии", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
+	body := container.NewVBox(head, newPanel(attrs), widget.NewLabelWithStyle("Описание", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), newPanel(u.formattedText(v.Description)), u.attachmentSection(v), widget.NewLabelWithStyle("Комментарии", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}))
 	for i, j := range v.Journals {
 		if strings.TrimSpace(j.Notes) == "" {
 			continue
 		}
-		body.Add(newPanel(container.NewVBox(widget.NewLabelWithStyle(j.User.Name, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), label(formatDate(j.Created)+fmt.Sprintf(" · #%d", i+1)), label(j.Notes))))
+		body.Add(newPanel(container.NewVBox(widget.NewLabelWithStyle(j.User.Name, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), label(formatDate(j.Created)+fmt.Sprintf(" · #%d", i+1)), u.formattedText(j.Notes))))
 	}
 	comment := widget.NewButtonWithIcon("Комментарий", theme.MailComposeIcon(), func() { u.comment(v.ID) })
 	comment.Importance = widget.HighImportance

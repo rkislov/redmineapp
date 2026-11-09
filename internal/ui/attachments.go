@@ -49,13 +49,20 @@ func (u *UI) attachmentSection(v redmine.Issue) fyne.CanvasObject {
 		if a.Description != "" {
 			text.Add(label(a.Description))
 		}
-		rows.Add(newPanel(container.NewBorder(nil, nil, nil, widget.NewButtonWithIcon("Скачать", theme.DownloadIcon(), func() { u.downloadAttachment(a) }), text)))
+		buttons := container.NewVBox(widget.NewButtonWithIcon("Скачать", theme.DownloadIcon(), func() { u.downloadAttachment(a) }))
+		if canPreview(a) {
+			buttons.Objects = append([]fyne.CanvasObject{widget.NewButtonWithIcon("Просмотр", theme.VisibilityIcon(), func() { u.previewAttachment(v.ID, a) })}, buttons.Objects...)
+		}
+		rows.Add(newPanel(container.NewBorder(nil, nil, nil, buttons, text)))
 	}
 	return container.NewVBox(widget.NewLabelWithStyle(fmt.Sprintf("Вложения (%d)", len(v.Attachments)), fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), rows)
 }
 
 // Transfer UI is updated on the main thread, at most ten times a second.
 func (u *UI) runTransfer(title string, work func(context.Context, func(string, int64, int64)) error, done func(error)) {
+	u.runTransferAt(u.win, title, work, done)
+}
+func (u *UI) runTransferAt(parent fyne.Window, title string, work func(context.Context, func(string, int64, int64)) error, done func(error)) context.CancelFunc {
 	c := u.client
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	if u.transferCancels == nil {
@@ -66,7 +73,7 @@ func (u *UI) runTransfer(title string, work func(context.Context, func(string, i
 	u.transferCancels[id] = cancel
 	message := label("Подготовка…")
 	bar := widget.NewProgressBar()
-	d := dialog.NewCustom(title, "Отмена", container.NewVBox(message, bar), u.win)
+	d := dialog.NewCustom(title, "Отмена", container.NewVBox(message, bar), parent)
 	d.SetOnClosed(cancel)
 	d.Resize(fyne.NewSize(480, 180))
 	d.Show()
@@ -104,15 +111,17 @@ func (u *UI) runTransfer(title string, work func(context.Context, func(string, i
 			cancel()
 			done(err)
 			if err != nil && u.client == c && !errors.Is(err, context.Canceled) {
-				dialog.ShowError(err, u.win)
+				dialog.ShowError(err, parent)
 			}
 		})
 	}()
+	return cancel
 }
-func (u *UI) downloadAttachment(a redmine.Attachment) {
+func (u *UI) downloadAttachment(a redmine.Attachment) { u.downloadAttachmentAt(u.win, a) }
+func (u *UI) downloadAttachmentAt(parent fyne.Window, a redmine.Attachment) context.CancelFunc {
 	c := u.client
 	var temp string
-	u.runTransfer("Скачивание вложения", func(ctx context.Context, report func(string, int64, int64)) error {
+	return u.runTransferAt(parent, "Скачивание вложения", func(ctx context.Context, report func(string, int64, int64)) error {
 		f, e := os.CreateTemp("", "redmineapp-attachment-*")
 		if e != nil {
 			return e
@@ -134,7 +143,7 @@ func (u *UI) downloadAttachment(a redmine.Attachment) {
 		d := dialog.NewFileSave(func(dst fyne.URIWriteCloser, e error) {
 			if e != nil {
 				_ = os.Remove(temp)
-				dialog.ShowError(e, u.win)
+				dialog.ShowError(e, parent)
 				return
 			}
 			if dst == nil {
@@ -157,11 +166,11 @@ func (u *UI) downloadAttachment(a redmine.Attachment) {
 						return
 					}
 					if e != nil {
-						dialog.ShowError(fmt.Errorf("не удалось сохранить файл: %w", e), u.win)
+						dialog.ShowError(fmt.Errorf("не удалось сохранить файл: %w", e), parent)
 					}
 				})
 			}()
-		}, u.win)
+		}, parent)
 		// A server-provided filename must never select a directory on the computer.
 		name := filepath.Base(strings.ReplaceAll(a.Filename, "\\", "/"))
 		if name == "." || name == "/" || name == "" {
@@ -174,16 +183,18 @@ func (u *UI) downloadAttachment(a redmine.Attachment) {
 }
 
 type attachmentPicker struct {
-	u     *UI
-	paths []string
-	view  *fyne.Container
-	rows  *fyne.Container
-	add   *widget.Button
-	busy  bool
+	u      *UI
+	win    fyne.Window
+	cancel context.CancelFunc
+	paths  []string
+	view   *fyne.Container
+	rows   *fyne.Container
+	add    *widget.Button
+	busy   bool
 }
 
 func (u *UI) newAttachmentPicker() *attachmentPicker {
-	p := &attachmentPicker{u: u, rows: container.NewVBox()}
+	p := &attachmentPicker{u: u, win: u.win, rows: container.NewVBox()}
 	p.add = widget.NewButtonWithIcon("Добавить файл…", theme.MailAttachmentIcon(), p.choose)
 	scroll := container.NewVScroll(p.rows)
 	scroll.SetMinSize(fyne.NewSize(380, 100))
@@ -226,7 +237,7 @@ func (p *attachmentPicker) choose() {
 	c := p.u.client
 	d := dialog.NewFileOpen(func(r fyne.URIReadCloser, e error) {
 		if e != nil {
-			dialog.ShowError(e, p.u.win)
+			dialog.ShowError(e, p.win)
 			return
 		}
 		if r == nil {
@@ -237,7 +248,7 @@ func (p *attachmentPicker) choose() {
 			return
 		}
 		if r.URI().Scheme() != "file" {
-			dialog.ShowError(fmt.Errorf("выберите локальный файл"), p.u.win)
+			dialog.ShowError(fmt.Errorf("выберите локальный файл"), p.win)
 			return
 		}
 		path := r.URI().Path()
@@ -248,16 +259,16 @@ func (p *attachmentPicker) choose() {
 		}
 		info, e := os.Stat(path)
 		if e != nil {
-			dialog.ShowError(e, p.u.win)
+			dialog.ShowError(e, p.win)
 			return
 		}
 		if !info.Mode().IsRegular() {
-			dialog.ShowError(fmt.Errorf("выберите обычный файл"), p.u.win)
+			dialog.ShowError(fmt.Errorf("выберите обычный файл"), p.win)
 			return
 		}
 		p.paths = append(p.paths, path)
 		p.refresh()
-	}, p.u.win)
+	}, p.win)
 	d.Resize(fyne.NewSize(700, 480))
 	d.Show()
 }

@@ -40,6 +40,8 @@ for name, module in sorted(modules.items()):
     for path in sorted(licenses):
         parts.append("\n--- " + str(path.relative_to(directory)) + " ---\n" + path.read_text(errors="replace") + "\n")
 
+parts.append("\n" + "=" * 78 + "\n" + (root / "packaging/pdfium-notices.txt").read_text())
+
 goroot = pathlib.Path(subprocess.check_output(["go", "env", "GOROOT"], text=True).strip())
 parts.append("\n" + "=" * 78 + "\nGo standard library and runtime\n\n" + (goroot / "LICENSE").read_text())
 text = "\n".join(line.rstrip() for line in "".join(parts).splitlines()) + "\n"
