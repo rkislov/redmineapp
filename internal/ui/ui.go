@@ -543,8 +543,10 @@ func (u *UI) showIssue(v redmine.Issue) {
 	if u.detailLoading != nil {
 		u.detailLoading.Stop()
 	}
-	title := widget.NewRichText(&widget.TextSegment{Text: v.Subject, Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Bold: true}, SizeName: theme.SizeNameHeadingText}})
+	title := widget.NewLabelWithStyle(v.Subject, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	title.SizeName = theme.SizeNameHeadingText
 	title.Wrapping = fyne.TextWrapWord
+	title.Selectable = true
 	favorite := widget.NewButtonWithIcon("", starIcon, nil)
 	key := u.cfg.FavoriteKey(u.client.Base.String(), v.ID)
 	setStar := func() {
@@ -570,7 +572,7 @@ func (u *UI) showIssue(v redmine.Issue) {
 		closeButton.SetText("Закрыта")
 		closeButton.Disable()
 	}
-	head := container.NewVBox(container.NewBorder(nil, nil, label(fmt.Sprintf("#%d · %s", v.ID, v.Project.Name)), container.NewHBox(favorite, closeButton)), container.NewHBox(func() *badge { b := newBadge(); b.Set(v.Status.Name); return b }(), label(v.Tracker.Name)), title, label("Создал(а) "+v.Author.Name))
+	head := container.NewVBox(container.NewBorder(nil, nil, label(fmt.Sprintf("#%d · %s", v.ID, v.Project.Name)), container.NewHBox(favorite, closeButton)), container.NewHBox(func() *badge { b := newBadge(); b.Set(v.Status.Name); return b }(), label(v.Tracker.Name)), withTextSelection(title), label("Создал(а) "+v.Author.Name))
 	progress := newEditableProgress()
 	progress.OnChanged = func(value int) { u.setIssueProgress(v.ID, progress, value) }
 	progress.SetValue(float64(v.Done) / 100)

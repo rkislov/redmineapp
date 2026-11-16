@@ -4,6 +4,7 @@ package ui
 
 import (
 	"html"
+	"image/color"
 	"io"
 	"strings"
 
@@ -90,12 +91,15 @@ func (u *UI) formattedText(text string) fyne.CanvasObject {
 	for _, part := range parts {
 		if !part.pre {
 			if part.text != "" {
-				box.Add(label(part.text))
+				prose := label(part.text)
+				prose.Selectable = true
+				box.Add(prose)
 			}
 			continue
 		}
 		code := part.text
-		block := widget.NewRichText(&widget.TextSegment{Text: code, Style: widget.RichTextStyle{TextStyle: fyne.TextStyle{Monospace: true}, ColorName: theme.ColorNameForeground}})
+		block := widget.NewLabelWithStyle(code, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+		block.Selectable = true
 		block.Wrapping = fyne.TextWrapOff
 		scroll := container.NewScroll(block)
 		lines := strings.Count(code, "\n") + 1
@@ -106,5 +110,18 @@ func (u *UI) formattedText(text string) fyne.CanvasObject {
 		background.CornerRadius = 12
 		box.Add(container.NewStack(background, container.NewPadded(container.NewBorder(heading, nil, nil, nil, scroll))))
 	}
-	return box
+	return withTextSelection(box)
+}
+
+type textSelectionTheme struct{ projectListTheme }
+
+func (t textSelectionTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	if name == theme.ColorNameSelection {
+		return alpha(currentColors().accent, 100)
+	}
+	return t.projectListTheme.Color(name, variant)
+}
+
+func withTextSelection(content fyne.CanvasObject) fyne.CanvasObject {
+	return container.NewThemeOverride(content, textSelectionTheme{})
 }
